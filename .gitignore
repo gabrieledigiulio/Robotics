@@ -8,9 +8,6 @@ outputs/
 *.png
 *.mp4
 
-# Dataset
-dataset/
-*.pkl
 
 # Ambiente virtuale
 venv/
