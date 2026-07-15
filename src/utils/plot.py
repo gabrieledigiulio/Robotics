@@ -5,8 +5,8 @@ import cv2
 
 
 def plot_losses_train_val(train_losses: list, val_losses: list,
-                          save_path: str = None):
-    epochs = range(1, len(train_losses) + 1)
+                          save_path: str = None, start_epoch: int = 1):
+    epochs = range(start_epoch, start_epoch + len(train_losses))
 
     fig, ax = plt.subplots(figsize=(10, 5))
 
@@ -15,7 +15,7 @@ def plot_losses_train_val(train_losses: list, val_losses: list,
     ax.plot(epochs, val_losses, label="Val Loss",
             color="#F44336", linewidth=2, linestyle="--")
 
-    best_epoch = int(np.argmin(val_losses)) + 1
+    best_epoch = int(np.argmin(val_losses)) + start_epoch
     best_val   = min(val_losses)
     ax.axvline(best_epoch, color="#4CAF50", linestyle=":", linewidth=1.5,
                label=f"Best epoch ({best_epoch}) — val={best_val:.5f}")
@@ -134,27 +134,42 @@ def plot_prediction_comparison(real_frames, pred_frames, num_frames: int = 5,
         plt.show()
 
 
-def plot_tactile_rollout(real_tac, pred_tac, sensor_idx: int = 0,
-                         save_path: str = None):
-    if torch.is_tensor(real_tac):
-        real_tac = real_tac.detach().cpu().numpy()
-    if torch.is_tensor(pred_tac):
-        pred_tac = pred_tac.detach().cpu().numpy()
+def plot_sensor_rollout(real_sensor, pred_sensor, save_path: str = None, title: str = "Sensor Rollout"):
+    if torch.is_tensor(real_sensor):
+        real_sensor = real_sensor.detach().cpu().numpy()
+    if torch.is_tensor(pred_sensor):
+        pred_sensor = pred_sensor.detach().cpu().numpy()
 
-    plt.figure(figsize=(8, 4))
-    plt.plot(real_tac[:, sensor_idx], label="Real",
-             color="blue", linestyle="-")
-    plt.plot(pred_tac[:, sensor_idx], label="Predicted",
-             color="red", linestyle="--")
+    num_sensors = real_sensor.shape[1]
+    
+    # Calculate grid size dynamically
+    cols = min(5, num_sensors)
+    rows = (num_sensors + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 3))
+    # Handle the case where axes is not a 2D array
+    if rows == 1 and cols == 1:
+        axes = np.array([[axes]])
+    elif rows == 1 or cols == 1:
+        axes = axes.reshape(rows, cols)
+        
+    plt.suptitle(title, fontsize=18)
 
-    plt.title(f"Tactile Rollout (Sensor {sensor_idx})", fontsize=14)
-    plt.xlabel("Time Steps (t)", fontsize=12)
-    plt.ylabel("Signal Intensity", fontsize=12)
-    plt.legend()
-    plt.grid(True, alpha=0.5)
+    for i in range(rows * cols):
+        ax = axes[i // cols, i % cols]
+        if i < num_sensors:
+            ax.plot(real_sensor[:, i], label="Real", color="blue", linestyle="-", alpha=0.8)
+            ax.plot(pred_sensor[:, i], label="Pred", color="red", linestyle="--", alpha=0.8)
+            ax.set_title(f"Sensor {i}", fontsize=10)
+            ax.grid(True, alpha=0.5)
+            if i == 0:
+                ax.legend()
+        else:
+            ax.axis("off")
 
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, bbox_inches="tight", dpi=150)
         plt.close()
     else:
         plt.show()

@@ -7,14 +7,12 @@ import torch.nn.functional as F
 
 
 class DynamicsMLP(nn.Module):
-    def __init__(self, img_dim=64, action_dim=3, hidden_dim=256):
+    def __init__(self, latent_dim=64, action_dim=3, hidden_dim=256):
         super().__init__()
 
-        self.img_dim = img_dim
-
-        input_dim = img_dim + action_dim
-
-        output_dim = img_dim
+        self.latent_dim = latent_dim
+        input_dim = latent_dim + action_dim
+        output_dim = latent_dim
 
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -24,35 +22,38 @@ class DynamicsMLP(nn.Module):
             nn.Linear(hidden_dim, output_dim)
         )
 
-    def forward(self, z_img_t, action_t, z_next=None):
-        z_fuso = torch.cat([z_img_t, action_t], dim=-1)
+    def forward(self, z_curr, action_t, z_next=None):
+        z_fuso = torch.cat([z_curr, action_t], dim=-1)
         return self.net(z_fuso)
 
-    def rollout(self, z_img_0, actions_sequence):
+    def sample(self, z_curr, action_t):
+        """Uniform interface with Diffusion/FlowMatching dynamics."""
+        return self.forward(z_curr, action_t)
+
+    def rollout(self, z_0, actions_sequence):
         batch_size, N, _ = actions_sequence.shape
 
-        pred_img_latents = []
-        z_img_curr = z_img_0
+        pred_latents = []
+        z_curr = z_0
 
         for t in range(N):
             action_t = actions_sequence[:, t, :]
-            z_img_next = self.forward(z_img_curr, action_t)
-            pred_img_latents.append(z_img_next)
-            z_img_curr = z_img_next
+            z_next_t = self.forward(z_curr, action_t)
+            pred_latents.append(z_next_t)
+            z_curr = z_next_t
 
-        pred_img_latents = torch.stack(pred_img_latents, dim=1)
-        return pred_img_latents
-
+        pred_latents = torch.stack(pred_latents, dim=1)
+        return pred_latents
 
 
 class DiffusionDynamics(nn.Module):
 
-    def __init__(self, img_dim: int = 64, action_dim: int = 3,
+    def __init__(self, latent_dim: int = 64, action_dim: int = 3,
                  hidden_dim: int = 256, n_steps: int = 100,
                  beta_start: float = 1e-4, beta_end: float = 0.02):
         super().__init__()
 
-        self.img_dim = img_dim
+        self.latent_dim = latent_dim
         self.n_steps = n_steps
 
         betas               = torch.linspace(beta_start, beta_end, n_steps)
@@ -75,12 +76,12 @@ class DiffusionDynamics(nn.Module):
                              (1.0 - alphas_cumprod).clamp(min=1e-8))
 
         self.time_embed = nn.Sequential(
-            nn.Linear(img_dim, hidden_dim),
+            nn.Linear(latent_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
         )
 
-        denoiser_in = img_dim + hidden_dim + img_dim + action_dim
+        denoiser_in = latent_dim + hidden_dim + latent_dim + action_dim
         self.denoiser = nn.Sequential(
             nn.Linear(denoiser_in, hidden_dim),
             nn.SiLU(),
@@ -88,12 +89,12 @@ class DiffusionDynamics(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, img_dim),
+            nn.Linear(hidden_dim, latent_dim),
         )
 
 
     def _sinusoidal_embed(self, timesteps: torch.Tensor) -> torch.Tensor:
-        half  = self.img_dim // 2
+        half  = self.latent_dim // 2
         freqs = torch.exp(
             -math.log(10000.0) *
             torch.arange(half, dtype=torch.float32, device=timesteps.device) / half
@@ -136,7 +137,7 @@ class DiffusionDynamics(nn.Module):
     def sample(self, z_cond: torch.Tensor, action_t: torch.Tensor) -> torch.Tensor:
         B, device = z_cond.shape[0], z_cond.device
 
-        z = torch.randn(B, self.img_dim, device=device)
+        z = torch.randn(B, self.latent_dim, device=device)
 
         for i in reversed(range(self.n_steps)):
             t = torch.full((B,), i, device=device, dtype=torch.long)
@@ -173,31 +174,34 @@ class DiffusionDynamics(nn.Module):
 
 
 class FlowMatchingDynamics(nn.Module):
-    def __init__(self, img_dim: int, action_dim: int, hidden_dim: int, n_steps: int):
+    def __init__(self, latent_dim: int, action_dim: int, hidden_dim: int, n_steps: int):
         super().__init__()
-        self.img_dim    = img_dim
+        self.latent_dim = latent_dim
         self.action_dim = action_dim
         self.n_steps    = n_steps
+        self.hidden_dim = hidden_dim
 
-        self.time_embed = nn.Sequential(
-            nn.Linear(img_dim, hidden_dim),
+        # Sinusoidal embed dim is independent of latent_dim
+        # Using a fixed small projection keeps the param count lean
+        sin_dim = min(hidden_dim, 128)  # at most 128-D sinusoidal features
+        self.time_proj = nn.Sequential(
+            nn.Linear(sin_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
         )
+        self._sin_dim = sin_dim
 
-        vnet_in = img_dim + hidden_dim + img_dim + action_dim
+        # 2 hidden layers instead of 3: enough for a small dataset
+        vnet_in = latent_dim + hidden_dim + latent_dim + action_dim
         self.v_net = nn.Sequential(
             nn.Linear(vnet_in, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, img_dim),
+            nn.Linear(hidden_dim, latent_dim),
         )
 
     def _sinusoidal_embed(self, timesteps: torch.Tensor) -> torch.Tensor:
-        half  = self.img_dim // 2
+        half  = self._sin_dim // 2
         freqs = torch.exp(
             -math.log(10000.0) *
             torch.arange(half, dtype=torch.float32, device=timesteps.device) / half
@@ -207,8 +211,8 @@ class FlowMatchingDynamics(nn.Module):
 
     def predict_velocity(self, z_t: torch.Tensor, t: torch.Tensor,
                          z_cond: torch.Tensor, action_t: torch.Tensor) -> torch.Tensor:
-        t_emb = self._sinusoidal_embed(t)
-        t_emb = self.time_embed(t_emb)
+        t_emb = self._sinusoidal_embed(t)   # [B, sin_dim]
+        t_emb = self.time_proj(t_emb)       # [B, hidden_dim]
         x = torch.cat([z_t, t_emb, z_cond, action_t], dim=-1)
         return self.v_net(x)
 
@@ -236,7 +240,7 @@ class FlowMatchingDynamics(nn.Module):
     def sample(self, z_cond: torch.Tensor, action_t: torch.Tensor) -> torch.Tensor:
         B, device = z_cond.shape[0], z_cond.device
         
-        z = torch.randn(B, self.img_dim, device=device)
+        z = torch.randn(B, self.latent_dim, device=device)
         
         dt = 1.0 / self.n_steps
         

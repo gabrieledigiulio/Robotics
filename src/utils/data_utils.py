@@ -22,7 +22,8 @@ def load_raw_data(dataset_dir: Path, trial: int, condition: str):
     print(f"  [Data] Total frames : {len(vision)}")
     print(f"  [Data] Resolution   : {vision.shape[1]}×{vision.shape[2]} px")
     print(f"  [Data] Action dim   : {actions.shape[1]}")
-    return vision, actions
+    print(f"  [Data] Proprio dim : {_pos.shape[1]}")
+    return vision, actions, _force, _pos
 
 
 
@@ -76,13 +77,21 @@ def load_and_concat_datasets(dataset_dir: Path,
 
     per_split_Xt  = {"train": [], "val": [], "test": []}
     per_split_Xt1 = {"train": [], "val": [], "test": []}
+    per_split_St  = {"train": [], "val": [], "test": []}
+    per_split_St1 = {"train": [], "val": [], "test": []}
+    per_split_Pt  = {"train": [], "val": [], "test": []}
+    per_split_Pt1 = {"train": [], "val": [], "test": []}
     per_split_At  = {"train": [], "val": [], "test": []}
 
     for trial, condition in dataset_list:
-        vision, actions = load_raw_data(dataset_dir, trial, condition)
+        vision, actions, force, pos = load_raw_data(dataset_dir, trial, condition)
 
         Xt  = vision[:-1].astype(np.float32) / 255.0
         Xt1 = vision[1:].astype(np.float32)  / 255.0
+        St  = force[:-1].astype(np.float32)
+        St1 = force[1:].astype(np.float32)
+        Pt  = pos[:-1].astype(np.float32)
+        Pt1 = pos[1:].astype(np.float32)
         At  = actions[:-1].astype(np.float32)
 
         Xt  = np.transpose(Xt,  (0, 3, 1, 2))
@@ -101,6 +110,10 @@ def load_and_concat_datasets(dataset_dir: Path,
         for name, sl in trial_slices.items():
             per_split_Xt[name].append(Xt[sl])
             per_split_Xt1[name].append(Xt1[sl])
+            per_split_St[name].append(St[sl])
+            per_split_St1[name].append(St1[sl])
+            per_split_Pt[name].append(Pt[sl])
+            per_split_Pt1[name].append(Pt1[sl])
             per_split_At[name].append(At[sl])
 
         print(f"  [Split] trial_{trial}_{condition}: "
@@ -109,6 +122,10 @@ def load_and_concat_datasets(dataset_dir: Path,
 
     X_t  = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_Xt.items()}
     X_t1 = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_Xt1.items()}
+    S_t_raw  = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_St.items()}
+    S_t1_raw = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_St1.items()}
+    P_t_raw  = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_Pt.items()}
+    P_t1_raw = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_Pt1.items()}
     A_raw = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_At.items()}
 
     total_samples = sum(len(X_t[name]) for name in X_t)
@@ -121,8 +138,32 @@ def load_and_concat_datasets(dataset_dir: Path,
         "test":  scaler.transform(A_raw["test"]),
     }
 
+    force_scaler = StandardScaler()
+    scaled_S = {
+        "train": force_scaler.fit_transform(S_t_raw["train"]),
+        "val":   force_scaler.transform(S_t_raw["val"]),
+        "test":  force_scaler.transform(S_t_raw["test"]),
+    }
+    scaled_S1 = {
+        "train": force_scaler.transform(S_t1_raw["train"]),
+        "val":   force_scaler.transform(S_t1_raw["val"]),
+        "test":  force_scaler.transform(S_t1_raw["test"]),
+    }
+
+    proprio_scaler = StandardScaler()
+    scaled_P = {
+        "train": proprio_scaler.fit_transform(P_t_raw["train"]),
+        "val":   proprio_scaler.transform(P_t_raw["val"]),
+        "test":  proprio_scaler.transform(P_t_raw["test"]),
+    }
+    scaled_P1 = {
+        "train": proprio_scaler.transform(P_t1_raw["train"]),
+        "val":   proprio_scaler.transform(P_t1_raw["val"]),
+        "test":  proprio_scaler.transform(P_t1_raw["test"]),
+    }
+
     splits = {
-        name: (X_t[name], X_t1[name], scaled_A[name])
+        name: (X_t[name], X_t1[name], scaled_S[name], scaled_S1[name], scaled_P[name], scaled_P1[name], scaled_A[name])
         for name in ("train", "val", "test")
     }
 
@@ -134,27 +175,35 @@ def load_and_concat_datasets(dataset_dir: Path,
             "test": (
                 per_split_Xt["test"][i],
                 per_split_Xt1["test"][i],
+                force_scaler.transform(per_split_St["test"][i]),
+                force_scaler.transform(per_split_St1["test"][i]),
+                proprio_scaler.transform(per_split_Pt["test"][i]),
+                proprio_scaler.transform(per_split_Pt1["test"][i]),
                 scaler.transform(per_split_At["test"][i])
             )
         })
 
-    for name, (x, _, _) in splits.items():
+    for name, (x, _, _, _, _, _, _) in splits.items():
         pct = 100.0 * len(x) / total_samples
         print(f"  [Split] {name:5s}: {len(x):5d} samples  ({pct:.0f}%)")
 
-    return splits, scaler, per_dataset_splits
+    return splits, scaler, force_scaler, proprio_scaler, per_dataset_splits
 
 
 
 class WorldModelDataset(Dataset):
 
-    def __init__(self, X_t: np.ndarray, X_t1: np.ndarray, A_t: np.ndarray):
+    def __init__(self, X_t: np.ndarray, X_t1: np.ndarray, S_t: np.ndarray, S_t1: np.ndarray, P_t: np.ndarray, P_t1: np.ndarray, A_t: np.ndarray):
         self.X_t  = torch.tensor(X_t,  dtype=torch.float32)
         self.X_t1 = torch.tensor(X_t1, dtype=torch.float32)
+        self.S_t  = torch.tensor(S_t,  dtype=torch.float32)
+        self.S_t1 = torch.tensor(S_t1, dtype=torch.float32)
+        self.P_t  = torch.tensor(P_t,  dtype=torch.float32)
+        self.P_t1 = torch.tensor(P_t1, dtype=torch.float32)
         self.A_t  = torch.tensor(A_t,  dtype=torch.float32)
 
     def __len__(self) -> int:
         return len(self.X_t)
 
     def __getitem__(self, idx: int):
-        return self.X_t[idx], self.X_t1[idx], self.A_t[idx]
+        return self.X_t[idx], self.X_t1[idx], self.S_t[idx], self.S_t1[idx], self.P_t[idx], self.P_t1[idx], self.A_t[idx]
