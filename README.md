@@ -9,7 +9,7 @@ In particular, it implements:
 * **Modular Codebase**: easily configurable architecture through a centralized configuration file, fully customizable network depths, latent dimensions, and training hyperparameters.
 * **Optimization Techniques**: custom loss scaling for multi-objective optimization, gradient clipping, and robust weight initialization.
 * **Training and Validation tools**: Early Stopping, automatic model checkpointing, dataset splitting, and data normalization.
-* **Advanced Evaluation & Visualization**: computes 1-step and multi-step (rollout) metrics including MSE, Structural Similarity Index Measure (SSIM), and Perceptual Distance (LPIPS). Supports generation of prediction comparisons and video rollouts.
+* **Advanced Evaluation & Visualization**: computes 1-step and multi-step (rollout) MSE. Supports generation of prediction comparisons and video rollouts.
 
 ---
 
