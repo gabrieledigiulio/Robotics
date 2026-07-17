@@ -6,6 +6,15 @@ import cv2
 
 def plot_losses_train_val(train_losses: list, val_losses: list,
                           save_path: str = None, start_epoch: int = 1):
+    """
+    Plots the training and validation loss curves over epochs and highlights the best epoch.
+    
+    Args:
+        train_losses: List of training loss values.
+        val_losses: List of validation loss values.
+        save_path: Optional path to save the generated plot image. If None, the plot is displayed.
+        start_epoch: The starting epoch number for the x-axis.
+    """
     epochs = range(start_epoch, start_epoch + len(train_losses))
 
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -31,12 +40,18 @@ def plot_losses_train_val(train_losses: list, val_losses: list,
     if save_path:
         plt.savefig(save_path, bbox_inches="tight", dpi=150)
         plt.close()
-        print(f"  [Plot] Loss curves saved → {save_path}")
     else:
         plt.show()
 
 
 def plot_losses(loss_history: dict, save_path: str = None):
+    """
+    Plots multiple loss components from a history dictionary over epochs.
+    
+    Args:
+        loss_history: Dictionary where keys are loss names and values are lists of loss values.
+        save_path: Optional path to save the generated plot image.
+    """
     plt.figure(figsize=(10, 6))
 
     for loss_name, loss_values in loss_history.items():
@@ -57,6 +72,15 @@ def plot_losses(loss_history: dict, save_path: str = None):
 
 def plot_video_rollout(real_frames, pred_frames, num_frames: int = 5,
                        save_path: str = None):
+    """
+    Plots a static side-by-side visual comparison of ground truth and predicted image sequences over time.
+    
+    Args:
+        real_frames: Ground truth sequence of images.
+        pred_frames: Predicted sequence of images.
+        num_frames: Maximum number of frames to display in the plot.
+        save_path: Optional path to save the generated plot image.
+    """
     if torch.is_tensor(real_frames):
         real_frames = real_frames.detach().cpu().numpy()
     if torch.is_tensor(pred_frames):
@@ -97,6 +121,16 @@ def plot_video_rollout(real_frames, pred_frames, num_frames: int = 5,
 def plot_prediction_comparison(real_frames, pred_frames, num_frames: int = 5,
                                title: str = "Prediction Comparison",
                                save_path: str = None):
+    """
+    Plots a frame-by-frame visual comparison of real and predicted sequences with a customizable title.
+    
+    Args:
+        real_frames: Ground truth sequence of images.
+        pred_frames: Predicted sequence of images.
+        num_frames: Maximum number of frames to display in the plot.
+        title: Title of the generated plot.
+        save_path: Optional path to save the generated plot image.
+    """
     if torch.is_tensor(real_frames):
         real_frames = real_frames.detach().cpu().numpy()
     if torch.is_tensor(pred_frames):
@@ -135,6 +169,15 @@ def plot_prediction_comparison(real_frames, pred_frames, num_frames: int = 5,
 
 
 def plot_sensor_rollout(real_sensor, pred_sensor, save_path: str = None, title: str = "Sensor Rollout"):
+    """
+    Plots a grid comparing real and predicted 1D sensor data values over time.
+    
+    Args:
+        real_sensor: Ground truth sequence of sensor readings.
+        pred_sensor: Predicted sequence of sensor readings.
+        save_path: Optional path to save the generated plot image.
+        title: Title of the generated plot.
+    """
     if torch.is_tensor(real_sensor):
         real_sensor = real_sensor.detach().cpu().numpy()
     if torch.is_tensor(pred_sensor):
@@ -142,12 +185,11 @@ def plot_sensor_rollout(real_sensor, pred_sensor, save_path: str = None, title: 
 
     num_sensors = real_sensor.shape[1]
     
-    # Calculate grid size dynamically
     cols = min(5, num_sensors)
     rows = (num_sensors + cols - 1) // cols
     
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 3))
-    # Handle the case where axes is not a 2D array
+    
     if rows == 1 and cols == 1:
         axes = np.array([[axes]])
     elif rows == 1 or cols == 1:
@@ -177,6 +219,15 @@ def plot_sensor_rollout(real_sensor, pred_sensor, save_path: str = None, title: 
 
 def export_to_video(tensor_frames, filename: str = "rollout.mp4",
                     fps: int = 10, upscale_size: tuple = (512, 512)):
+    """
+    Exports a sequence of image tensors or arrays to an MP4 video file.
+    
+    Args:
+        tensor_frames: Sequence of images to be converted into video.
+        filename: Output filename for the MP4 video.
+        fps: Frames per second for the exported video.
+        upscale_size: Target resolution width and height to upscale the frames.
+    """
     if torch.is_tensor(tensor_frames):
         frames = tensor_frames.detach().cpu().numpy()
     else:
@@ -191,8 +242,6 @@ def export_to_video(tensor_frames, filename: str = "rollout.mp4",
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(filename, fourcc, fps, (out_w, out_h))
 
-    print(f"  [Video] Exporting {N} frames → {filename}")
-
     for i in range(N):
         frame = frames[i]
         if upscale_size is not None:
@@ -203,11 +252,20 @@ def export_to_video(tensor_frames, filename: str = "rollout.mp4",
         out.write(frame)
 
     out.release()
-    print(f"  [Video] Saved successfully.")
 
 
 def export_comparison_video(real_frames, pred_frames, filename: str = "comparison.mp4",
                             fps: int = 10, upscale_size: tuple = (512, 512)):
+    """
+    Exports a side-by-side comparison video of real and predicted image sequences.
+    
+    Args:
+        real_frames: Ground truth sequence of images.
+        pred_frames: Predicted sequence of images.
+        filename: Output filename for the MP4 video.
+        fps: Frames per second for the exported video.
+        upscale_size: Target resolution width and height to upscale the frames.
+    """
     if torch.is_tensor(real_frames):
         real_frames = real_frames.detach().cpu().numpy()
     else:
@@ -234,8 +292,6 @@ def export_comparison_video(real_frames, pred_frames, filename: str = "compariso
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(filename, fourcc, fps, (side_w, out_h))
 
-    print(f"  [Video] Exporting comparison of {N} frames → {filename}")
-
     for i in range(N):
         real = real_frames[i]
         pred = pred_frames[i]
@@ -252,11 +308,21 @@ def export_comparison_video(real_frames, pred_frames, filename: str = "compariso
         out.write(frame)
 
     out.release()
-    print(f"  [Video] Saved successfully.")
 
 
 def export_triple_comparison_video(real_frames, pred1_frames, pred2_frames, filename: str = "comparison_triple.mp4",
                                    fps: int = 10, upscale_size: tuple = (512, 512)):
+    """
+    Exports a side-by-side-by-side triple comparison video using one real and two predicted image sequences.
+    
+    Args:
+        real_frames: Ground truth sequence of images.
+        pred1_frames: First predicted sequence of images.
+        pred2_frames: Second predicted sequence of images.
+        filename: Output filename for the MP4 video.
+        fps: Frames per second for the exported video.
+        upscale_size: Target resolution width and height to upscale the frames.
+    """
     if torch.is_tensor(real_frames):
         real_frames = real_frames.detach().cpu().numpy()
     else:
@@ -291,8 +357,6 @@ def export_triple_comparison_video(real_frames, pred1_frames, pred2_frames, file
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(filename, fourcc, fps, (side_w, out_h))
 
-    print(f"  [Video] Exporting triple comparison of {N} frames → {filename}")
-
     for i in range(N):
         real = real_frames[i]
         pred1 = pred1_frames[i]
@@ -312,4 +376,3 @@ def export_triple_comparison_video(real_frames, pred1_frames, pred2_frames, file
         out.write(frame)
 
     out.release()
-    print(f"  [Video] Saved triple comparison successfully.")

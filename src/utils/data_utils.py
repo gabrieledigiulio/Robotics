@@ -7,10 +7,11 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 
 
-
 def load_raw_data(dataset_dir: Path, trial: int, condition: str):
+    """
+    Loads raw data from a gzipped pickle file for a specific trial and condition.
+    """
     path = dataset_dir / f"trial_{trial}_{condition}.pkl"
-    print(f"  [Data] Loading: {path.name}")
 
     with gzip.open(str(path), "rb") as f:
         _time   = pickle.load(f)
@@ -19,19 +20,17 @@ def load_raw_data(dataset_dir: Path, trial: int, condition: str):
         actions = pickle.load(f)
         vision  = pickle.load(f)
 
-    print(f"  [Data] Total frames : {len(vision)}")
-    print(f"  [Data] Resolution   : {vision.shape[1]}×{vision.shape[2]} px")
-    print(f"  [Data] Action dim   : {actions.shape[1]}")
-    print(f"  [Data] Proprio dim : {_pos.shape[1]}")
     return vision, actions, _force, _pos
-
 
 
 def make_temporal_splits(vision: np.ndarray,
                          actions: np.ndarray,
                          ratios: tuple = (0.70, 0.15, 0.15)):
-    assert len(ratios) == 3, "ratios deve avere 3 elementi: (train, val, test)"
-    assert abs(sum(ratios) - 1.0) < 1e-6, "ratios deve sommare a 1.0"
+    """
+    Splits the temporal data into training, validation, and testing sets.
+    """
+    assert len(ratios) == 3, "ratios must have 3 elements: (train, val, test)"
+    assert abs(sum(ratios) - 1.0) < 1e-6, "ratios must sum to 1.0"
 
     X_t  = vision[:-1].astype(np.float32) / 255.0
     X_t1 = vision[1:].astype(np.float32)  / 255.0
@@ -73,7 +72,11 @@ def make_temporal_splits(vision: np.ndarray,
 def load_and_concat_datasets(dataset_dir: Path,
                               dataset_list: list,
                               ratios: tuple = (0.70, 0.15, 0.15)):
-    assert len(ratios) == 3 and abs(sum(ratios) - 1.0) < 1e-6
+    """
+    Loads multiple datasets, splits them temporally according to the given ratios,
+    and concatenates the splits across all datasets.
+    """
+    assert len(ratios) == 3 and abs(sum(ratios) - 1.0) < 1e-6, "ratios must have 3 elements and sum to 1.0"
 
     per_split_Xt  = {"train": [], "val": [], "test": []}
     per_split_Xt1 = {"train": [], "val": [], "test": []}
@@ -129,7 +132,6 @@ def load_and_concat_datasets(dataset_dir: Path,
     A_raw = {name: np.concatenate(chunks, axis=0) for name, chunks in per_split_At.items()}
 
     total_samples = sum(len(X_t[name]) for name in X_t)
-    print(f"  [Data] Total concatenated samples: {total_samples}")
 
     scaler = StandardScaler()
     scaled_A = {
@@ -190,8 +192,10 @@ def load_and_concat_datasets(dataset_dir: Path,
     return splits, scaler, force_scaler, proprio_scaler, per_dataset_splits
 
 
-
 class WorldModelDataset(Dataset):
+    """
+    PyTorch Dataset wrapper for the World Model data.
+    """
 
     def __init__(self, X_t: np.ndarray, X_t1: np.ndarray, S_t: np.ndarray, S_t1: np.ndarray, P_t: np.ndarray, P_t1: np.ndarray, A_t: np.ndarray):
         self.X_t  = torch.tensor(X_t,  dtype=torch.float32)

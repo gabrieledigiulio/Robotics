@@ -2,9 +2,18 @@ import numpy as np
 
 
 class EarlyStopping:
+    """
+    Early stops the training if validation loss doesn't improve after a given patience.
+    """
 
     def __init__(self, patience: int = 20, min_delta: float = 1e-4,
                  verbose: bool = True):
+        """
+        Args:
+            patience: How many epochs to wait after last time validation loss improved.
+            min_delta: Minimum change in the monitored quantity to qualify as an improvement.
+            verbose: If True, prints a message for each validation loss improvement.
+        """
         self.patience  = patience
         self.min_delta = min_delta
         self.verbose   = verbose
@@ -15,6 +24,12 @@ class EarlyStopping:
         self.save_checkpoint = False
 
     def __call__(self, val_loss: float) -> None:
+        """
+        Call this method at the end of each epoch to check if training should stop.
+        
+        Args:
+            val_loss: The validation loss of the current epoch.
+        """
         self.save_checkpoint = False
 
         if val_loss < (self.best_loss - self.min_delta):

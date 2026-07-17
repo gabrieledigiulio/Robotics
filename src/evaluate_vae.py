@@ -17,7 +17,19 @@ from utils.plot import plot_prediction_comparison, export_comparison_video, plot
 torch.manual_seed(config.SEED)
 np.random.seed(config.SEED)
 
+
 def resolve_model_path(model_name: str) -> Path:
+    """
+    Resolves the absolute path for a given model filename.
+    Appends the '.pt' extension if missing and prepends the models 
+    directory if a relative path is provided.
+    
+    Args:
+        model_name: The name or path of the model checkpoint.
+        
+    Returns:
+        A resolved Path object pointing to the model file.
+    """
     path = Path(model_name)
     if path.suffix == "":
         path = path.with_suffix(".pt")
@@ -25,28 +37,27 @@ def resolve_model_path(model_name: str) -> Path:
         path = config.MODELS_DIR / path
     return path
 
-def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
-    print("=" * 65)
-    print("  World Model — VAE Evaluation")
-    print(f"  Device  : {config.DEVICE}")
-    print("=" * 65)
 
+def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
+    """
+    Evaluates the trained VAE model on the test dataset.
+    
+    This function loads the test splits, initializes the WorldModel,
+    loads the pre-trained VAE weights, and calculates the Mean Squared Error (MSE) 
+    for image, tactile, and proprioceptive reconstructions. 
+    It also generates and saves visual comparison plots and videos.
+    """
     for d in [config.MODELS_DIR, config.PLOTS_DIR, config.VIDEOS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
-    print("\n[1/4] Preparing test split...")
     splits, action_scaler, force_scaler, proprio_scaler, per_dataset_splits = load_and_concat_datasets(
         config.DATASET_DIR, config.DATASETS, config.SPLIT_RATIO
     )
     test_dataset = WorldModelDataset(*splits["test"])
     test_loader  = DataLoader(test_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
-    print(f"  Test samples: {len(test_dataset)}")
 
-    print("\n[2/4] Loading VAE checkpoint...")
     vae_ckpt = resolve_model_path(vae_checkpoint_name)
     if not vae_ckpt.exists():
-        print(f"  [Error] VAE checkpoint not found: {vae_ckpt}")
-        print("  Run VAE training first.")
         return
 
     action_dim = splits["test"][6].shape[1]
@@ -83,9 +94,6 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
         vq_num_embeddings   = config.VQ_NUM_EMBEDDINGS,
         vq_embedding_dim    = config.VQ_EMBEDDING_DIM,
         vq_commitment_cost  = config.VQ_COMMITMENT_COST,
-        diffusion_steps     = config.DIFFUSION_STEPS,
-        diffusion_beta_start= config.DIFFUSION_BETA_START,
-        diffusion_beta_end  = config.DIFFUSION_BETA_END,
     ).to(config.DEVICE)
 
     ckpt = torch.load(vae_ckpt, map_location=str(config.DEVICE), weights_only=False)
@@ -93,15 +101,9 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
     vae_state_dict = {k: v for k, v in state_dict.items() if not k.startswith("dynamics.")}
     model.load_state_dict(vae_state_dict, strict=False)
     
-    epoch = ckpt.get("epoch", 0)
-    val_loss = ckpt.get("val_loss", float("inf"))
     model.eval()
-    print(f"  Model      : VAE (Base)")
-    print(f"  Checkpoint : {vae_ckpt.name}")
-    print(f"  Loaded epoch {epoch + 1} | val_loss={val_loss:.6f}")
 
-    print("\n[3/4] VAE Reconstruction Metrics")
-    print("-" * 65)
+    print(f"Model File: {vae_ckpt.name}")
 
     total_mse_img = 0.0
     total_mse_tac = 0.0
@@ -114,15 +116,15 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             pos_t = pos_t.to(config.DEVICE)
             
             if config.LATENT_TYPE == "vqvae":
-                z_img_t, _, _ = model.visual_encoder(img_t)
+                z_img_t, _, _, _ = model.visual_encoder(img_t)
             else:
-                _, z_img_t, _ = model.visual_encoder(img_t)  # use mu for inference
+                _, z_img_t, _ = model.visual_encoder(img_t)
             img_pred = model.visual_decoder(z_img_t)
             
-            _, mu_tac_t, _ = model.tactile_encoder(tac_t)  # use mu for inference
+            _, mu_tac_t, _ = model.tactile_encoder(tac_t)
             tac_pred = model.tactile_decoder(mu_tac_t)
             
-            _, mu_pos_t, _ = model.proprio_encoder(pos_t)  # use mu for inference
+            _, mu_pos_t, _ = model.proprio_encoder(pos_t)
             pos_pred = model.proprio_decoder(mu_pos_t)
             
             mse_img = F.mse_loss(img_pred, img_t).item()
@@ -139,19 +141,13 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
     mean_mse_tac_norm = total_mse_tac / max(n_batches, 1)
     mean_mse_pos_norm = total_mse_pos / max(n_batches, 1)
 
-    print(f"  VAE Image Recon MSE : {mean_mse_img_norm:.6f}  [norm]")
-    print(f"  VAE Image Recon MSE : {mean_mse_img_255:.2f}  [0-255]")
-    print(f"  VAE Tactile Recon MSE : {mean_mse_tac_norm:.6f}  [norm]")
-    print(f"  VAE Proprio Recon MSE : {mean_mse_pos_norm:.6f}  [norm]")
-    print("-" * 65)
+    print(f"VAE Image Recon MSE   : {mean_mse_img_norm:.6f} [norm] / {mean_mse_img_255:.2f} [0-255]")
+    print(f"VAE Tactile Recon MSE : {mean_mse_tac_norm:.6f} [norm]")
+    print(f"VAE Proprio Recon MSE : {mean_mse_pos_norm:.6f} [norm]")
 
-    print("\n[4/4] Generating Visualizations per Dataset")
-    print("-" * 65)
-    
     for ds_info in per_dataset_splits[:1]:
         trial = ds_info["trial"]
         condition = ds_info["condition"]
-        print(f"\n  Processing dataset: Trial {trial} - {condition}")
         
         ds_test = WorldModelDataset(*ds_info["test"])
         visual_frames = min(50, len(ds_test))
@@ -162,15 +158,15 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             pos_t = ds_test.P_t[:visual_frames].to(config.DEVICE)
             
             if config.LATENT_TYPE == "vqvae":
-                z_img_t, _, _ = model.visual_encoder(img_t)
+                z_img_t, _, _, _ = model.visual_encoder(img_t)
             else:
-                _, z_img_t, _ = model.visual_encoder(img_t)  # use mu for inference
+                _, z_img_t, _ = model.visual_encoder(img_t)
             img_pred = model.visual_decoder(z_img_t)
             
-            _, mu_tac_t, _ = model.tactile_encoder(tac_t)  # use mu for inference
+            _, mu_tac_t, _ = model.tactile_encoder(tac_t)
             tac_pred = model.tactile_decoder(mu_tac_t)
             
-            _, mu_pos_t, _ = model.proprio_encoder(pos_t)  # use mu for inference
+            _, mu_pos_t, _ = model.proprio_encoder(pos_t)
             pos_pred = model.proprio_decoder(mu_pos_t)
             
             real_list = ds_test.X_t[:visual_frames]
@@ -183,6 +179,7 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             pred_pos_list = pos_pred.cpu()
 
         prefix = f"test_vae_recon_t{trial}_{condition}"
+        
         vae_plot_path = config.PLOTS_DIR / f"{prefix}_img.png"
         plot_prediction_comparison(
             real_list,
@@ -191,7 +188,6 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             title=f"VAE Recon: Trial {trial} {condition}",
             save_path=str(vae_plot_path)
         )
-        print(f"  Saved VAE image plot : {vae_plot_path.name}")
         
         tac_plot_path = config.PLOTS_DIR / f"{prefix}_tac.png"
         plot_sensor_rollout(
@@ -200,7 +196,6 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             save_path=str(tac_plot_path),
             title=f"VAE Tactile Recon: Trial {trial} {condition}"
         )
-        print(f"  Saved VAE tactile plot : {tac_plot_path.name}")
 
         pos_plot_path = config.PLOTS_DIR / f"{prefix}_pos.png"
         plot_sensor_rollout(
@@ -209,7 +204,6 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             save_path=str(pos_plot_path),
             title=f"VAE Proprio Recon: Trial {trial} {condition}"
         )
-        print(f"  Saved VAE proprio plot : {pos_plot_path.name}")
 
         vae_video_path = config.VIDEOS_DIR / f"{prefix}.mp4"
         export_comparison_video(
@@ -218,9 +212,6 @@ def evaluate_vae(vae_checkpoint_name: str = config.VAE_BEST_MODEL_NAME):
             filename=str(vae_video_path),
             fps=config.VIDEO_FPS,
         )
-        print(f"  Saved VAE video : {vae_video_path.name}")
-
-    print("\n  VAE Evaluation complete.")
 
 if __name__ == "__main__":
     evaluate_vae()

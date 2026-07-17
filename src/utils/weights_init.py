@@ -1,6 +1,17 @@
 import torch.nn as nn
 
+
 def init_weights(m):
+    """
+    Initializes the weights of a PyTorch module.
+    
+    Applies Kaiming Normal initialization to Linear, Conv2d, and 
+    ConvTranspose2d layers (optimized for ReLU nonlinearity). 
+    Initializes BatchNorm2d weights to 1 and biases to 0.
+    
+    Args:
+        m: A PyTorch module (torch.nn.Module).
+    """
     if isinstance(m, nn.Linear):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
         if m.bias is not None:
