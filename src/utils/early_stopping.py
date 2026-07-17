@@ -22,8 +22,9 @@ class EarlyStopping:
         self.counter         = 0
         self.early_stop      = False
         self.save_checkpoint = False
+        self.best_epoch      = 0
 
-    def __call__(self, val_loss: float) -> None:
+    def __call__(self, val_loss: float, epoch: int = None) -> None:
         """
         Call this method at the end of each epoch to check if training should stop.
         
@@ -38,6 +39,8 @@ class EarlyStopping:
             self.best_loss       = val_loss
             self.counter         = 0
             self.save_checkpoint = True
+            if epoch is not None:
+                self.best_epoch = epoch
         else:
             self.counter += 1
             if self.counter >= self.patience:
