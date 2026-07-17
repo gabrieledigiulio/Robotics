@@ -5,7 +5,7 @@ import cv2
 
 
 def plot_losses_train_val(train_losses: list, val_losses: list,
-                          save_path: str = None, start_epoch: int = 1):
+                          save_path: str = None, start_epoch: int = 1, best_epoch: int = None):
     """
     Plots the training and validation loss curves over epochs and highlights the best epoch.
     
@@ -24,8 +24,13 @@ def plot_losses_train_val(train_losses: list, val_losses: list,
     ax.plot(epochs, val_losses, label="Val Loss",
             color="#F44336", linewidth=2, linestyle="--")
 
-    best_epoch = int(np.argmin(val_losses)) + start_epoch
-    best_val   = min(val_losses)
+    if best_epoch is None:
+        best_epoch = int(np.argmin(val_losses)) + start_epoch
+    
+    # Calculate index safely
+    idx = max(0, min(best_epoch - start_epoch, len(val_losses) - 1))
+    best_val   = val_losses[idx]
+    
     ax.axvline(best_epoch, color="#4CAF50", linestyle=":", linewidth=1.5,
                label=f"Best epoch ({best_epoch}) — val={best_val:.5f}")
     ax.scatter(best_epoch, best_val, color="#4CAF50", zorder=5, s=80)
