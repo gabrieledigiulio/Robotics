@@ -417,7 +417,7 @@ def train(phase: str = config.TRAIN_PHASE,
         elif phase == "dynamics":
             print(f"         ↳ Dyn MSE (val): Img: {val_stats.get('dyn_img', 0):.4f} | Tac: {val_stats.get('dyn_tac', 0):.4f} | Pos: {val_stats.get('dyn_pos', 0):.4f}")
 
-        early_stopper(val_loss)
+        early_stopper(val_loss, epoch=epoch + 1)
         if early_stopper.save_checkpoint:
             save_checkpoint(model, optimizer, epoch, val_loss, best_ckpt_path)
 
@@ -425,7 +425,7 @@ def train(phase: str = config.TRAIN_PHASE,
             print(f"\n  [Training] Early stopping at epoch {epoch + 1}.")
             break
 
-    plot_losses_train_val(history["train"], history["val"], save_path=str(plot_path), start_epoch=1)
+    plot_losses_train_val(history["train"], history["val"], save_path=str(plot_path), start_epoch=1, best_epoch=early_stopper.best_epoch)
 
     print(f"\nTraining {phase.upper()} completed.")
     print(f"Saved model → {best_ckpt_path.name}")
