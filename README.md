@@ -38,9 +38,9 @@ In particular, it implements:
 ## Usage
 
 ### 1. Requirements
-Ensure you have the necessary libraries installed. It is recommended to use an environment with PyTorch and common scientific libraries:
+Ensure you have the necessary libraries installed. Install the project dependencies explicitly with pip:
 ```bash
-pip install torch numpy matplotlib lpips
+pip install torch torchvision torchaudio numpy matplotlib opencv-python-headless scikit-learn torchmetrics lpips
 ```
 
 ### 2. Configuration
