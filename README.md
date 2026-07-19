@@ -58,13 +58,13 @@ python3 train.py
 ### 4. Run Evaluation
 After training, you can evaluate the models and generate plots/videos for 1-step and multi-step rollouts:
 ```bash
+# Evaluate the standalone VAE visually
+python3 evaluate_vae.py
+
 # Evaluate the full dynamics and world model
 python3 evaluate.py
 
 # Run advanced evaluation tests (Divergence, Action Sensitivity, Rollout Quality metrics)
 python3 evaluate_advanced.py
-
-# Evaluate the standalone VAE visually
-python3 evaluate_vae.py
 ```
 Outputs, including generated videos and metric text files, will be saved into the `src/outputs` folder by default.
