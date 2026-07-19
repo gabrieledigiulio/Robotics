@@ -381,3 +381,276 @@ def export_triple_comparison_video(real_frames, pred1_frames, pred2_frames, file
         out.write(frame)
 
     out.release()
+
+
+def plot_rollout_quality_summary(steps, img_mse, img_ssim_dist, img_lpips,
+                                 tac_mse, tac_shape, pos_mse, pos_shape,
+                                 tac_corr, pos_corr, out_path):
+    fig, axes = plt.subplots(3, 2, figsize=(15, 11), sharex=True)
+
+    # Image row
+    axes[0, 0].plot(steps, img_mse, color="black", linewidth=2, label="MSE")
+    axes[0, 0].set_title("Image MSE")
+    axes[0, 0].set_ylabel("MSE")
+    axes[0, 0].grid(True, alpha=0.3)
+    axes[0, 0].legend()
+
+    axes[0, 1].plot(steps, img_ssim_dist, color="blue", linewidth=2, label="1 - SSIM")
+    if np.isfinite(img_lpips).any():
+        axes[0, 1].plot(steps, img_lpips, color="red", linestyle="--", linewidth=2, label="LPIPS")
+    axes[0, 1].set_title("Image anti-flat metrics")
+    axes[0, 1].grid(True, alpha=0.3)
+    axes[0, 1].legend()
+
+    # Tactile row
+    axes[1, 0].plot(steps, tac_mse, color="black", linewidth=2, label="MSE")
+    axes[1, 0].set_title("Tactile MSE")
+    axes[1, 0].set_ylabel("MSE")
+    axes[1, 0].grid(True, alpha=0.3)
+    axes[1, 0].legend()
+
+    axes[1, 1].plot(steps, tac_shape, color="purple", linewidth=2, label="Derivative shape error")
+    axes[1, 1].set_title(f"Tactile trajectory shape error (corr={tac_corr:.3f})")
+    axes[1, 1].grid(True, alpha=0.3)
+    axes[1, 1].legend()
+
+    # Proprio row
+    axes[2, 0].plot(steps, pos_mse, color="black", linewidth=2, label="MSE")
+    axes[2, 0].set_title("Proprioception MSE")
+    axes[2, 0].set_xlabel("Rollout Step")
+    axes[2, 0].set_ylabel("MSE")
+    axes[2, 0].grid(True, alpha=0.3)
+    axes[2, 0].legend()
+
+    axes[2, 1].plot(steps, pos_shape, color="purple", linewidth=2, label="Derivative shape error")
+    axes[2, 1].set_title(f"Proprio trajectory shape error (corr={pos_corr:.3f})")
+    axes[2, 1].set_xlabel("Rollout Step")
+    axes[2, 1].grid(True, alpha=0.3)
+    axes[2, 1].legend()
+
+    plt.tight_layout()
+    plt.savefig(str(out_path), dpi=150)
+    plt.close()
+
+
+def calculate_metrics(data_pos, data_neg, n_samples, n_steps):
+    import torch.nn.functional as F
+    # 1. Noise floor (MSE between samples of the same action)
+    noise_floor = []
+    for t in range(n_steps):
+        diffs = [F.mse_loss(data_pos[i, t], data_pos[j, t]).item() 
+                 for i in range(n_samples) for j in range(i + 1, n_samples)]
+        noise_floor.append(np.mean(diffs) if diffs else 0.0)
+
+    # 2. Action Divergence (MSE between sample k of Pos vs sample k of Neg)
+    divergence = []
+    for t in range(n_steps):
+        diffs = [F.mse_loss(data_pos[k, t], data_neg[k, t]).item() for k in range(n_samples)]
+        divergence.append(np.mean(diffs))
+    
+    return noise_floor, divergence
+
+
+def plot_results(results, save_path: str):
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    modalities = ["Image", "Tactile", "Proprioception"]
+    keys = ["imgs", "tacs", "pos"]
+    
+    n_samples = results["push_pos"]["imgs"].shape[0]
+    n_steps = results["push_pos"]["imgs"].shape[1]
+
+    for i, (ax, mod, key) in enumerate(zip(axes, modalities, keys)):
+        noise, div = calculate_metrics(results["push_pos"][key], results["push_neg"][key], n_samples, n_steps)
+        
+        ax.plot(range(n_steps), noise, 'k--', label="Noise Floor (same action)")
+        ax.plot(range(n_steps), div, 'r-', linewidth=2, label="Action Divergence")
+        
+        ax.set_title(mod)
+        ax.set_xlabel("Rollout Step")
+        ax.set_ylabel("MSE")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(save_path)
+
+
+def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
+                                 latent_var_pos, latent_var_neg, latent_div_pos_neg,
+                                 mean_tac_pos, mean_tac_neg, mean_pos_pos, mean_pos_neg,
+                                 tac_idx, pos_idx, switch_step, output_tag):
+
+    import config
+
+    def _tagged_name(stem: str, tag: str) -> str:
+        return f"{stem}_{tag}.png" if tag else f"{stem}.png"
+
+    out_path_img = config.PLOTS_DIR_EXP / _tagged_name("divergence_vision_trial1_point0", output_tag)
+    out_path_img_int = config.PLOTS_DIR_EXP / _tagged_name("divergence_vision_intensity_trial1_point0", output_tag)
+    out_path_latent = config.PLOTS_DIR_EXP / _tagged_name("latent_temporal_variation_trial1_point0", output_tag)
+    out_path_latent_div = config.PLOTS_DIR_EXP / _tagged_name("latent_divergence_push_pos_vs_push_neg_trial1_point0", output_tag)
+    out_path_tac = config.PLOTS_DIR_EXP / _tagged_name("divergence_tactile_sensor18_trial1_point0", output_tag)
+    out_path_pos = config.PLOTS_DIR_EXP / _tagged_name("divergence_proprio_sensor18_trial1_point0", output_tag)
+    out_path_summary = config.PLOTS_DIR_EXP / _tagged_name("divergence_trial1_point0", output_tag)
+
+    out_path_img.parent.mkdir(parents=True, exist_ok=True)
+    out_path_img_int.parent.mkdir(parents=True, exist_ok=True)
+    out_path_latent.parent.mkdir(parents=True, exist_ok=True)
+    out_path_latent_div.parent.mkdir(parents=True, exist_ok=True)
+    out_path_tac.parent.mkdir(parents=True, exist_ok=True)
+    out_path_pos.parent.mkdir(parents=True, exist_ok=True)
+    out_path_summary.parent.mkdir(parents=True, exist_ok=True)
+
+    latent_steps = np.arange(len(latent_var_pos))
+    latent_div_steps = np.arange(len(latent_div_pos_neg))
+    line_step = None if switch_step is None else max(0, switch_step - 1)
+
+    mean_img_pos_intensity = mean_imgs_pos.view(mean_imgs_pos.shape[0], -1).mean(dim=1).cpu().numpy()
+    mean_img_neg_intensity = mean_imgs_neg.view(mean_imgs_neg.shape[0], -1).mean(dim=1).cpu().numpy()
+
+    tac_pos_vals = mean_tac_pos[:, tac_idx].cpu().numpy()
+    tac_neg_vals = mean_tac_neg[:, tac_idx].cpu().numpy()
+
+    pos_pos_vals = mean_pos_pos[:, pos_idx].cpu().numpy()
+    pos_neg_vals = mean_pos_neg[:, pos_idx].cpu().numpy()
+
+
+    # 1) Vision MSE plot
+    plt.figure(figsize=(8, 4))
+    plt.plot(steps, img_mse, color="black", linewidth=2)
+    plt.title("Vision MSE between push_pos and push_neg (per step)")
+    plt.xlabel("Rollout Step")
+    plt.ylabel("MSE (pixels)")
+    plt.grid(True, alpha=0.3)
+    if line_step is not None:
+        plt.axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(str(out_path_img), dpi=150)
+    plt.close()
+
+    # Also plot mean image intensity per step for the two rollouts
+    plt.figure(figsize=(8, 4))
+    plt.plot(steps, mean_img_pos_intensity, label="push_pos", color="blue")
+    plt.plot(steps, mean_img_neg_intensity, label="push_neg", color="red", linestyle="--")
+    plt.title("Mean image intensity: push_pos vs push_neg")
+    plt.xlabel("Rollout Step")
+    plt.ylabel("Mean intensity")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    if line_step is not None:
+        plt.axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(str(out_path_img_int), dpi=150)
+    plt.close()
+
+    # 1b) Temporal latent variation plot
+    plt.figure(figsize=(8, 4))
+    plt.plot(latent_steps, latent_var_pos, label="push_pos", color="blue")
+    plt.plot(latent_steps, latent_var_neg, label="push_neg", color="red", linestyle="--")
+    plt.title("Temporal latent variation: ||z(t+1) - z(t)|| / sqrt(D)")
+    plt.xlabel("Rollout Step")
+    plt.ylabel("Normalized latent change")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    latent_min = 0.0
+    latent_max = float(max(latent_var_pos.max(), latent_var_neg.max()))
+    plt.ylim(latent_min, max(latent_max * 1.1, 1e-4))
+    if line_step is not None:
+        plt.axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(str(out_path_latent), dpi=150)
+    plt.close()
+
+    # 1c) Same-step latent divergence between the two action sequences
+    plt.figure(figsize=(8, 4))
+    plt.plot(latent_div_steps, latent_div_pos_neg, color="purple", linewidth=2)
+    plt.title("Latent divergence: push_pos vs push_neg at the same step")
+    plt.xlabel("Rollout Step")
+    plt.ylabel("Normalized latent distance")
+    plt.grid(True, alpha=0.3)
+    latent_div_max = float(latent_div_pos_neg.max()) if len(latent_div_pos_neg) > 0 else 0.0
+    plt.ylim(0.0, max(latent_div_max * 1.1, 1e-4))
+    if line_step is not None:
+        plt.axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(str(out_path_latent_div), dpi=150)
+    plt.close()
+
+    # 2) Tactile sensor plot
+    plt.figure(figsize=(8, 4))
+    plt.plot(steps, tac_pos_vals, label="push_pos", color="blue")
+    plt.plot(steps, tac_neg_vals, label="push_neg", color="red", linestyle="--")
+    plt.title(f"Tactile sensor {tac_idx}: push_pos vs push_neg")
+    plt.xlabel("Rollout Step")
+    plt.ylabel("Sensor value")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    if switch_step is not None:
+        plt.axvline(switch_step, color="gray", linestyle=":", linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(str(out_path_tac), dpi=150)
+    plt.close()
+
+    # 3) Proprio sensor plot
+    plt.figure(figsize=(8, 4))
+    plt.plot(steps, pos_pos_vals, label="push_pos", color="blue")
+    plt.plot(steps, pos_neg_vals, label="push_neg", color="red", linestyle="--")
+    plt.title(f"Proprio sensor {pos_idx}: push_pos vs push_neg")
+    plt.xlabel("Rollout Step")
+    plt.ylabel("Sensor value")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    if switch_step is not None:
+        plt.axvline(switch_step, color="gray", linestyle=":", linewidth=1.5)
+    plt.tight_layout()
+    plt.savefig(str(out_path_pos), dpi=150)
+    plt.close()
+
+    # Legacy summary plot
+    fig, axes = plt.subplots(3, 1, figsize=(10, 11))
+
+    # Vision intensity panel
+    axes[0].plot(steps, mean_img_pos_intensity, label="push_pos", color="blue")
+    axes[0].plot(steps, mean_img_neg_intensity, label="push_neg", color="red", linestyle="--")
+    axes[0].set_title("Mean image intensity: push_pos vs push_neg")
+    axes[0].set_xlabel("Rollout Step")
+    axes[0].set_ylabel("Mean intensity")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+    if line_step is not None:
+        axes[0].axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+
+    # Tactile panel
+    axes[1].plot(steps, tac_pos_vals, label="push_pos", color="blue")
+    axes[1].plot(steps, tac_neg_vals, label="push_neg", color="red", linestyle="--")
+    axes[1].set_title(f"Tactile sensor {tac_idx}: push_pos vs push_neg")
+    axes[1].set_xlabel("Rollout Step")
+    axes[1].set_ylabel("Sensor value")
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+    if line_step is not None:
+        axes[1].axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+
+    # Proprio panel
+    axes[2].plot(steps, pos_pos_vals, label="push_pos", color="blue")
+    axes[2].plot(steps, pos_neg_vals, label="push_neg", color="red", linestyle="--")
+    axes[2].set_title(f"Proprio sensor {pos_idx}: push_pos vs push_neg")
+    axes[2].set_xlabel("Rollout Step")
+    axes[2].set_ylabel("Sensor value")
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
+    if line_step is not None:
+        axes[2].axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
+
+    plt.tight_layout()
+    plt.savefig(str(out_path_summary), dpi=150)
+    plt.close()
+
+    print(f"Saved vision plot to: {out_path_img}")
+    print(f"Saved tactile plot to: {out_path_tac}")
+    print(f"Saved proprio plot to: {out_path_pos}")
+    print(f"Saved latent variation plot to: {out_path_latent}")
+    print(f"Saved latent divergence plot to: {out_path_latent_div}")
+    print(f"Saved legacy summary plot to: {out_path_summary}")
+
+
