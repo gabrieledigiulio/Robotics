@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import cv2
-
+import config
 
 def plot_losses_train_val(train_losses: list, val_losses: list,
                           save_path: str = None, start_epoch: int = 1, best_epoch: int = None):
@@ -386,9 +386,27 @@ def export_triple_comparison_video(real_frames, pred1_frames, pred2_frames, file
 def plot_rollout_quality_summary(steps, img_mse, img_ssim_dist, img_lpips,
                                  tac_mse, tac_shape, pos_mse, pos_shape,
                                  tac_corr, pos_corr, out_path):
+    """
+    Plots a multi-panel summary of rollout quality comparing ground truth and predictions.
+    
+    Includes panels for image MSE, image anti-flat metrics (1-SSIM, LPIPS), tactile MSE,
+    tactile trajectory shape error, proprioception MSE, and proprioception trajectory shape error.
+    
+    Args:
+        steps: Array of rollout steps.
+        img_mse: Array of image MSE values per step.
+        img_ssim_dist: Array of image 1-SSIM values per step.
+        img_lpips: Array of image LPIPS values per step.
+        tac_mse: Array of tactile MSE values per step.
+        tac_shape: Array of tactile derivative shape error values per step.
+        pos_mse: Array of proprioception MSE values per step.
+        pos_shape: Array of proprioception derivative shape error values per step.
+        tac_corr: Mean tactile correlation value.
+        pos_corr: Mean proprioception correlation value.
+        out_path: Path to save the generated plot.
+    """
     fig, axes = plt.subplots(3, 2, figsize=(15, 11), sharex=True)
 
-    # Image row
     axes[0, 0].plot(steps, img_mse, color="black", linewidth=2, label="MSE")
     axes[0, 0].set_title("Image MSE")
     axes[0, 0].set_ylabel("MSE")
@@ -402,7 +420,6 @@ def plot_rollout_quality_summary(steps, img_mse, img_ssim_dist, img_lpips,
     axes[0, 1].grid(True, alpha=0.3)
     axes[0, 1].legend()
 
-    # Tactile row
     axes[1, 0].plot(steps, tac_mse, color="black", linewidth=2, label="MSE")
     axes[1, 0].set_title("Tactile MSE")
     axes[1, 0].set_ylabel("MSE")
@@ -414,7 +431,6 @@ def plot_rollout_quality_summary(steps, img_mse, img_ssim_dist, img_lpips,
     axes[1, 1].grid(True, alpha=0.3)
     axes[1, 1].legend()
 
-    # Proprio row
     axes[2, 0].plot(steps, pos_mse, color="black", linewidth=2, label="MSE")
     axes[2, 0].set_title("Proprioception MSE")
     axes[2, 0].set_xlabel("Rollout Step")
@@ -434,15 +450,28 @@ def plot_rollout_quality_summary(steps, img_mse, img_ssim_dist, img_lpips,
 
 
 def calculate_metrics(data_pos, data_neg, n_samples, n_steps):
+    """
+    Calculates the noise floor and action-induced divergence between two sets of rollout samples.
+    
+    The noise floor is calculated as the average MSE between samples generated from the same action sequence.
+    Divergence is calculated as the average MSE between samples from opposite action sequences (pos vs neg).
+    
+    Args:
+        data_pos: Rollout samples under the positive action sequence.
+        data_neg: Rollout samples under the negative action sequence.
+        n_samples: Number of rollout samples.
+        n_steps: Number of steps in the rollout.
+        
+    Returns:
+        A tuple (noise_floor, divergence) containing the lists of values per step.
+    """
     import torch.nn.functional as F
-    # 1. Noise floor (MSE between samples of the same action)
     noise_floor = []
     for t in range(n_steps):
         diffs = [F.mse_loss(data_pos[i, t], data_pos[j, t]).item() 
                  for i in range(n_samples) for j in range(i + 1, n_samples)]
         noise_floor.append(np.mean(diffs) if diffs else 0.0)
 
-    # 2. Action Divergence (MSE between sample k of Pos vs sample k of Neg)
     divergence = []
     for t in range(n_steps):
         diffs = [F.mse_loss(data_pos[k, t], data_neg[k, t]).item() for k in range(n_samples)]
@@ -452,6 +481,13 @@ def calculate_metrics(data_pos, data_neg, n_samples, n_steps):
 
 
 def plot_results(results, save_path: str):
+    """
+    Plots action sensitivity curves (Action Divergence vs Noise Floor) for all modalities.
+    
+    Args:
+        results: Dictionary containing rollout results for 'push_pos' and 'push_neg' action sequences.
+        save_path: Path where the output sensitivity plot is saved.
+    """
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     modalities = ["Image", "Tactile", "Proprioception"]
     keys = ["imgs", "tacs", "pos"]
@@ -479,8 +515,29 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
                                  latent_var_pos, latent_var_neg, latent_div_pos_neg,
                                  mean_tac_pos, mean_tac_neg, mean_pos_pos, mean_pos_neg,
                                  tac_idx, pos_idx, switch_step, output_tag):
-
-    import config
+    """
+    Plots detailed evaluation curves for divergence tests between opposing action sequences.
+    
+    Generates and saves multiple figures: vision MSE, mean image intensity, temporal latent variation, 
+    latent divergence, tactile sensor values, proprioception sensor values, and a legacy summary plot.
+    
+    Args:
+        steps: Array of rollout steps.
+        img_mse: Array of image MSE values between positive and negative actions.
+        mean_imgs_pos: Mean rollout image tensor for positive actions.
+        mean_imgs_neg: Mean rollout image tensor for negative actions.
+        latent_var_pos: Normalized temporal latent variation for positive actions.
+        latent_var_neg: Normalized temporal latent variation for negative actions.
+        latent_div_pos_neg: Normalized latent divergence between positive and negative actions.
+        mean_tac_pos: Mean tactile values for positive actions.
+        mean_tac_neg: Mean tactile values for negative actions.
+        mean_pos_pos: Mean proprioception values for positive actions.
+        mean_pos_neg: Mean proprioception values for negative actions.
+        tac_idx: Index of the tactile sensor to plot.
+        pos_idx: Index of the proprioception sensor to plot.
+        switch_step: The step at which actions diverge/perturb.
+        output_tag: Suffix tag for saving generated file names.
+    """
 
     def _tagged_name(stem: str, tag: str) -> str:
         return f"{stem}_{tag}.png" if tag else f"{stem}.png"
@@ -491,7 +548,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     out_path_latent_div = config.PLOTS_DIR_EXP / _tagged_name("latent_divergence_push_pos_vs_push_neg_trial1_point0", output_tag)
     out_path_tac = config.PLOTS_DIR_EXP / _tagged_name("divergence_tactile_sensor18_trial1_point0", output_tag)
     out_path_pos = config.PLOTS_DIR_EXP / _tagged_name("divergence_proprio_sensor18_trial1_point0", output_tag)
-    out_path_summary = config.PLOTS_DIR_EXP / _tagged_name("divergence_trial1_point0", output_tag)
 
     out_path_img.parent.mkdir(parents=True, exist_ok=True)
     out_path_img_int.parent.mkdir(parents=True, exist_ok=True)
@@ -499,7 +555,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     out_path_latent_div.parent.mkdir(parents=True, exist_ok=True)
     out_path_tac.parent.mkdir(parents=True, exist_ok=True)
     out_path_pos.parent.mkdir(parents=True, exist_ok=True)
-    out_path_summary.parent.mkdir(parents=True, exist_ok=True)
 
     latent_steps = np.arange(len(latent_var_pos))
     latent_div_steps = np.arange(len(latent_div_pos_neg))
@@ -514,8 +569,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     pos_pos_vals = mean_pos_pos[:, pos_idx].cpu().numpy()
     pos_neg_vals = mean_pos_neg[:, pos_idx].cpu().numpy()
 
-
-    # 1) Vision MSE plot
     plt.figure(figsize=(8, 4))
     plt.plot(steps, img_mse, color="black", linewidth=2)
     plt.title("Vision MSE between push_pos and push_neg (per step)")
@@ -528,7 +581,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     plt.savefig(str(out_path_img), dpi=150)
     plt.close()
 
-    # Also plot mean image intensity per step for the two rollouts
     plt.figure(figsize=(8, 4))
     plt.plot(steps, mean_img_pos_intensity, label="push_pos", color="blue")
     plt.plot(steps, mean_img_neg_intensity, label="push_neg", color="red", linestyle="--")
@@ -543,7 +595,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     plt.savefig(str(out_path_img_int), dpi=150)
     plt.close()
 
-    # 1b) Temporal latent variation plot
     plt.figure(figsize=(8, 4))
     plt.plot(latent_steps, latent_var_pos, label="push_pos", color="blue")
     plt.plot(latent_steps, latent_var_neg, label="push_neg", color="red", linestyle="--")
@@ -561,7 +612,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     plt.savefig(str(out_path_latent), dpi=150)
     plt.close()
 
-    # 1c) Same-step latent divergence between the two action sequences
     plt.figure(figsize=(8, 4))
     plt.plot(latent_div_steps, latent_div_pos_neg, color="purple", linewidth=2)
     plt.title("Latent divergence: push_pos vs push_neg at the same step")
@@ -576,7 +626,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     plt.savefig(str(out_path_latent_div), dpi=150)
     plt.close()
 
-    # 2) Tactile sensor plot
     plt.figure(figsize=(8, 4))
     plt.plot(steps, tac_pos_vals, label="push_pos", color="blue")
     plt.plot(steps, tac_neg_vals, label="push_neg", color="red", linestyle="--")
@@ -591,7 +640,6 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     plt.savefig(str(out_path_tac), dpi=150)
     plt.close()
 
-    # 3) Proprio sensor plot
     plt.figure(figsize=(8, 4))
     plt.plot(steps, pos_pos_vals, label="push_pos", color="blue")
     plt.plot(steps, pos_neg_vals, label="push_neg", color="red", linestyle="--")
@@ -606,51 +654,10 @@ def plot_divergence_test_results(steps, img_mse, mean_imgs_pos, mean_imgs_neg,
     plt.savefig(str(out_path_pos), dpi=150)
     plt.close()
 
-    # Legacy summary plot
-    fig, axes = plt.subplots(3, 1, figsize=(10, 11))
-
-    # Vision intensity panel
-    axes[0].plot(steps, mean_img_pos_intensity, label="push_pos", color="blue")
-    axes[0].plot(steps, mean_img_neg_intensity, label="push_neg", color="red", linestyle="--")
-    axes[0].set_title("Mean image intensity: push_pos vs push_neg")
-    axes[0].set_xlabel("Rollout Step")
-    axes[0].set_ylabel("Mean intensity")
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
-    if line_step is not None:
-        axes[0].axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
-
-    # Tactile panel
-    axes[1].plot(steps, tac_pos_vals, label="push_pos", color="blue")
-    axes[1].plot(steps, tac_neg_vals, label="push_neg", color="red", linestyle="--")
-    axes[1].set_title(f"Tactile sensor {tac_idx}: push_pos vs push_neg")
-    axes[1].set_xlabel("Rollout Step")
-    axes[1].set_ylabel("Sensor value")
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3)
-    if line_step is not None:
-        axes[1].axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
-
-    # Proprio panel
-    axes[2].plot(steps, pos_pos_vals, label="push_pos", color="blue")
-    axes[2].plot(steps, pos_neg_vals, label="push_neg", color="red", linestyle="--")
-    axes[2].set_title(f"Proprio sensor {pos_idx}: push_pos vs push_neg")
-    axes[2].set_xlabel("Rollout Step")
-    axes[2].set_ylabel("Sensor value")
-    axes[2].legend()
-    axes[2].grid(True, alpha=0.3)
-    if line_step is not None:
-        axes[2].axvline(line_step, color="gray", linestyle=":", linewidth=1.5)
-
-    plt.tight_layout()
-    plt.savefig(str(out_path_summary), dpi=150)
-    plt.close()
-
     print(f"Saved vision plot to: {out_path_img}")
     print(f"Saved tactile plot to: {out_path_tac}")
     print(f"Saved proprio plot to: {out_path_pos}")
     print(f"Saved latent variation plot to: {out_path_latent}")
     print(f"Saved latent divergence plot to: {out_path_latent_div}")
-    print(f"Saved legacy summary plot to: {out_path_summary}")
 
 
