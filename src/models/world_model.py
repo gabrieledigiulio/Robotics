@@ -142,7 +142,7 @@ class WorldModel(nn.Module):
             self.dynamics = DynamicsMLP(
                 latent_dim = total_latent_dim,
                 action_dim = action_dim,
-                hidden_dim = hidden_dim,
+                hidden_dim = dynamics_hidden_dim,
             )
 
         elif dynamics_type == "flow_matching":
@@ -341,6 +341,10 @@ class WorldModel(nn.Module):
                 quantized_flat = self._requantize_vq(img_part)
                 z_next = torch.cat([quantized_flat, z_next[:, self.img_latent_dim:]], dim=-1)
             
+            max_val = z_next.abs().max().item()
+            if max_val > 10.0:
+                print(f"[Debug Rollout] Step {step} - Max Latent Value: {max_val:.2f}")
+                
             z_next = torch.clamp(z_next, min=-50.0, max=50.0)
             
             pred_latents.append(z_next)
