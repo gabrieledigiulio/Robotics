@@ -19,6 +19,7 @@ In particular, it implements:
 |:--------------------------------|:--------------------------------------------------------------------------------------|
 | `src/train.py`                  | Core script managing the main training loops for the models (VAE and Dynamics).       |
 | `src/evaluate.py`               | Main evaluation routine computing multi-step metrics and generating visualization plots and videos. |
+| `src/evaluate_advanced.py`      | Advanced evaluation suite (Divergence, Action Sensitivity, and Rollout Quality metrics like SSIM, LPIPS, and shape error). |
 | `src/evaluate_vae.py`           | Specific evaluation script for the standalone visual VAE/VQ-VAE model.                |
 | `src/config.py`                 | Centralized configuration file for hyperparameters, paths, and model architecture.    |
 | `src/models/world_model.py`     | Core class defining the full multimodal World Model architecture.                     |
@@ -32,6 +33,7 @@ In particular, it implements:
 | `src/utils/checkpoint.py`       | Utilities to save and load model checkpoints during and after training.               |
 | `src/utils/losses.py`           | Implementation of custom loss functions for multi-modal reconstruction.               |
 | `src/utils/weights_init.py`     | Contains weight initialization methods across different modules.                      |
+| `README.md`                      | Project overview, documentation, and user guide.                                      |
 
 ---
 
@@ -58,6 +60,9 @@ After training, you can evaluate the models and generate plots/videos for 1-step
 ```bash
 # Evaluate the full dynamics and world model
 python3 evaluate.py
+
+# Run advanced evaluation tests (Divergence, Action Sensitivity, Rollout Quality metrics)
+python3 evaluate_advanced.py
 
 # Evaluate the standalone VAE visually
 python3 evaluate_vae.py
